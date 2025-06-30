@@ -1,8 +1,16 @@
 # File Renamer & Snowflake Decoder
 
-[![Language](https://img.shields.io/badge/Language-Bash-blue.svg)](https://www.gnu.org/software/bash/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Wiki](https://img.shields.io/badge/Project-Wiki-blueviolet.svg)](https://github.com/marcelositr/FileRenamerAndSnowflakeDecoder/wiki)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Language](https://img.shields.io/badge/language-Python-blue.svg)
+![Status](https://img.shields.io/badge/status-em%20desenvolvimento-yellow.svg)
+![Build](https://img.shields.io/github/actions/workflow/status/marcelositr/FileRenamerAndSnowflakeDecoder/ci.yml?branch=main)
+![Feito com](https://img.shields.io/badge/feito%20com-%F0%9F%A4%96%20%2B%20%F0%9F%A4%BB-critical)
+
+[![Último commit](https://img.shields.io/github/last-commit/marcelositr/FileRenamerAndSnowflakeDecoder)](https://github.com/marcelositr/FileRenamerAndSnowflakeDecoder/commits/main)
+[![Releases](https://img.shields.io/github/v/release/marcelositr/FileRenamerAndSnowflakeDecoder?label=release)](https://github.com/marcelositr/FileRenamerAndSnowflakeDecoder/releases)
+[![Issues](https://img.shields.io/github/issues/marcelositr/FileRenamerAndSnowflakeDecoder)](https://github.com/marcelositr/FileRenamerAndSnowflakeDecoder/issues)
+[![Stars](https://img.shields.io/github/stars/marcelositr/FileRenamerAndSnowflakeDecoder?style=social)](https://github.com/marcelositr/FileRenamerAndSnowflakeDecoder/stargazers)
+
 
 A set of powerful Bash scripts to batch-rename media files into a unique, information-rich "snowflake" format and a companion script to easily decode them. This project is designed to bring order and traceability to large collections of photos and videos.
 

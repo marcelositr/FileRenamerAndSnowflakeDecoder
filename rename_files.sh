@@ -1,107 +1,151 @@
 #!/bin/bash
 #===============================================================================
-#
 #          FILE: rename_files.sh
-#
 #         USAGE: ./rename_files.sh
-#
-#   DESCRIPTION: Bash script to rename files in a specified format based on
-#                exif data or file modification time and generate a Snowflake ID.
-#                Script Bash para renomear arquivos em um formato específico
-#                baseado em dados exif ou hora de modificação e gerar um ID Snowflake.
-#
-#       OPTIONS: -h for help
-#                -h para ajuda
+#   DESCRIPTION: Renames media files based on EXIF or modification time,
+#                adding a unique ID for traceability. The script is idempotent.
 #  REQUIREMENTS: bash, exiftool
-#          BUGS: n/a
-#         NOTES: Requires exiftool for extracting exif data.
 #        AUTHOR: marcelositr - marcelost@riseup.net
-#       CREATED: 2024/07/11
 #       VERSION: 1.0
-#      REVISION: n/a
-#
 #===============================================================================
 
-# Static part of the filename
-# Parte estática del nombre del archivo
-# Parte estática do nome do arquivo
-STATIC_PART="marcelositr"
+# --- Configuration ---
+readonly STATIC_PART="marcelositr"
+readonly -a EXTENSIONS=("*.jpg" "*.jpeg" "*.mov" "*.mp4" "*.raw" "*.webm" "*.webp")
+readonly LOG_FILE="rename_log.txt"
 
-# File extensions to be processed
-# Extensiones de archivo a procesar
-# Extensões de arquivo a serem processadas
-EXTENSIONS="*.jpg *.jpeg *.mov *.mp4 *.raw *.webm *.webp"
+# --- Functions ---
 
-# Check if exiftool is installed
-# Verifica si exiftool está instalado
-# Verifica se o exiftool está instalado
-if ! command -v exiftool &> /dev/null; then
-    echo "exiftool is not installed. Please install it and try again."
-    echo "exiftool no está instalado. Por favor instálelo y vuelva a intentarlo."
-    echo "exiftool não está instalado. Por favor, instale-o e tente novamente."
-    exit 1
-fi
+# Checks if a required command is available in the system's PATH.
+check_dependency() {
+    if ! command -v "$1" &> /dev/null; then
+        echo "Error: Required command '$1' is not installed." >&2
+        echo "Please install it and try again." >&2
+        exit 1
+    fi
+}
 
-# Function to generate a Snowflake ID
-# Función para generar un ID de Snowflake
-# Função para gerar um ID de Snowflake
-generate_snowflake() {
-    local timestamp random_number
+# Extracts the media's creation date.
+# Tries EXIF 'DateTimeOriginal' first, then falls back to file modification time.
+# @param $1: The path to the file.
+# @return: The date in YYYYMMDDHHMMSS format, or empty string if error.
+get_media_creation_date() {
+    local filepath="$1"
+    local file_date
+
+    # Use -s3 (-s -s -s) for terse output, just the value.
+    file_date=$(exiftool -s3 -DateTimeOriginal -d "%Y%m%d%H%M%S" "$filepath")
+
+    if [[ -z "$file_date" ]]; then
+        # Fallback to file modification time.
+        file_date=$(date -r "$filepath" +"%Y%m%d%H%M%S")
+    fi
+    
+    echo "$file_date"
+}
+
+# Generates a unique ID part for the filename.
+# Format: ExecutionTimestamp-RandomNumber-StaticPart
+generate_unique_id() {
+    local timestamp
+    local random_number
     timestamp=$(date +"%Y%m%d%H%M%S")
     random_number=$(printf "%05d" $RANDOM)
     echo "${timestamp}-${random_number}-${STATIC_PART}"
 }
 
-# Function to log actions
-# Función para registrar acciones
-# Função para registrar ações
+# Logs an action to the log file with a timestamp.
 log_action() {
-    local original_file="$1"
-    local new_file="$2"
-    echo "Renamed: $original_file -> $new_file" >> rename_log.txt
-    echo "Renombrado: $original_file -> $new_file" >> rename_log.txt
-    echo "Renomeado: $original_file -> $new_file" >> rename_log.txt
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
 }
 
-# Function to rename files
-# Función para renombrar archivos
-# Função para renomear arquivos
-rename_files() {
-    local dir="$1"
-    find "$dir" -type f \( $(printf -- '-iname "%s" -o ' $EXTENSIONS | sed 's/ -o $//') \) | while read -r file; do
-        # Extract date and time
-        # Extraer fecha y hora
-        # Extrair data e hora
-        local date
-        date=$(exiftool -DateTimeOriginal -d "%Y%m%d%H%M%S" "$file" | awk -F': ' '{print $2}')
-        if [ -z "$date" ]; then
-            date=$(date -r "$file" +"%Y%m%d%H%M%S")
-        fi
-        # Generate Snowflake ID
-        # Generar ID de Snowflake
-        # Gerar ID de Snowflake
-        local snowflake extension new_name
-        snowflake=$(generate_snowflake)
-        extension="${file##*.}"
-        new_name="${date}-${snowflake}.${extension}"
-        mv "$file" "$(dirname "$file")/$new_name"
-        log_action "$file" "$(dirname "$file")/$new_name"
+# Renames a single file according to the defined format.
+# @param $1: The path to the file to be renamed.
+# @return: 0 for success, 1 for skipped, 2 for error.
+rename_file() {
+    local filepath="$1"
+    local filename
+    filename=$(basename "$filepath")
+
+    # Idempotency check: Skip if the file already seems to be in the target format.
+    # The regex checks for: 14digits-14digits-5digits-staticpart.extension
+    if [[ "$filename" =~ ^[0-9]{14}-[0-9]{14}-[0-9]{5}-${STATIC_PART}\. ]]; then
+        echo "Skipping (already renamed): $filename"
+        return 1
+    fi
+
+    local file_date
+    file_date=$(get_media_creation_date "$filepath")
+
+    if [[ -z "$file_date" ]]; then
+        echo "Error: Could not determine date for '$filename'."
+        log_action "ERROR: Could not get date for '$filepath'."
+        return 2
+    fi
+
+    local unique_id extension new_name dir_path new_filepath
+    unique_id=$(generate_unique_id)
+    extension="${filepath##*.}"
+    dir_path=$(dirname "$filepath")
+    new_name="${file_date}-${unique_id}.${extension}"
+    new_filepath="${dir_path}/${new_name}"
+
+    echo "Renaming: '$filename' -> '$new_name'"
+    if mv "$filepath" "$new_filepath"; then
+        log_action "RENAMED: '$filepath' -> '$new_filepath'"
+        return 0
+    else
+        echo "Error: Failed to rename '$filename'."
+        log_action "ERROR: Failed to move '$filepath' to '$new_filepath'."
+        return 2
+    fi
+}
+
+# --- Main Execution ---
+
+main() {
+    check_dependency "exiftool"
+
+    read -r -p "Rename files in the current directory and subdirectories? (y/n): " confirm
+    echo # Newline for cleaner output
+
+    if ! [[ "$confirm" =~ ^[yYsS] ]]; then
+        echo "Operation cancelled by the user."
+        exit 0
+    fi
+
+    local target_dir="."
+    local renamed_count=0
+    local skipped_count=0
+    local error_count=0
+
+    echo "Starting file renaming process in '$target_dir'..."
+    echo "----------------------------------------------------"
+
+    # To build the 'find' command arguments safely, we use an array.
+    local find_args=()
+    for ext in "${EXTENSIONS[@]}"; do
+        find_args+=(-o -iname "$ext")
     done
+
+    # The loop `while ... done < <(find ...)` is used to avoid creating a subshell,
+    # allowing the counters (renamed_count, etc.) to be modified within the loop.
+    # `find -print0` and `read -d ''` make the script robust against filenames
+    # with spaces or special characters.
+    while IFS= read -r -d '' file; do
+        rename_file "$file"
+        case $? in
+            0) ((renamed_count++)) ;;
+            1) ((skipped_count++)) ;;
+            2) ((error_count++)) ;;
+        esac
+    done < <(find "$target_dir" -type f \( "${find_args[@]:1}" \) -print0)
+
+    echo "----------------------------------------------------"
+    echo "Process finished."
+    echo "Summary: Renamed: $renamed_count, Skipped: $skipped_count, Errors: $error_count"
+    echo "See '$LOG_FILE' for a detailed log."
 }
 
-# Request user confirmation
-# Solicitar confirmación del usuario
-# Solicitar confirmação do usuário
-read -p "Do you want to rename the files in the current directory and subdirectories? (y/n): " confirm
-read -p "¿Desea renombrar los archivos en el directorio actual y subdirectorios? (s/n): " confirm
-read -p "Deseja renomear os arquivos no diretório atual e subdiretórios? (s/n): " confirm
-if [[ $confirm == "y" ]] || [[ $confirm == "s" ]]; then
-    rename_files "."
-    echo "Files renamed successfully. See rename_log.txt for details."
-    echo "Archivos renombrados con éxito. Consulte rename_log.txt para obtener detalles."
-    echo "Arquivos renomeados com sucesso. Veja rename_log.txt para detalhes."
-else
-    echo "Operation cancelled."
-    echo "Operación cancelada."
-    echo "Operação cancelada."
-fi
+# Run the main function with all script arguments
+main "$@"
